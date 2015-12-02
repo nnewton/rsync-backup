@@ -1,0 +1,108 @@
+#!/bin/ksh
+#
+#
+#
+
+# Exit codes
+STATE_OK=0
+STATE_WARNING=1
+STATE_CRITICAL=2
+STATE_UNKNOWN=3
+
+VERSION="Version 0.1"
+AUTHOR="Narayan Newton <nnewton@tag1consulting.com>"
+PROGNAME=`/usr/bin/basename $0`
+NOW="$(date +"%s")"
+
+function revision {
+   echo "$PROGNAME - $VERSION"
+}
+
+function usage {
+   echo "Usage: $PROGNAME [-v] -w <age warning> -c <age critical>"
+}
+
+function help {
+  revision
+  usage
+
+   /bin/cat <<__EOT
+OPTIONS:
+-h
+   Print help screen
+-V
+   Print version 
+-w 
+   Exit with warning if timestamp file is greater than N old
+-c
+   Exit with error if timestamp file is greater than N old
+-t
+   Rsync Target Path
+__EOT
+
+}
+
+while [ "$1" ]; do
+   case "$1" in
+       -h | --help)
+           help
+           exit $STATE_OK
+           ;;
+       -V | --version)
+           revision
+           exit $STATE_OK
+           ;;
+       -w | --warning | -c | --critical)
+           if [[ "$2" = +([0-9]) ]]; then
+               thresh=$2
+              [[ "$1" = *-w* ]] && thresh_warn=$thresh || thresh_crit=$thresh
+              shift 2
+           else
+              echo 'Number required'
+              exit $STATE_CRITICAL
+           fi
+           ;;
+       -t | --target)
+           RSYNC_TARGET=$2
+           shift 2
+           ;;
+       -?)
+           usage
+           exit $STATE_OK
+           ;;
+       *)
+           echo "Invalid option '$1'"
+           usage
+           exit $STATE_CRITICAL
+           ;;
+   esac
+done
+
+if [[ -z "$thresh_warn" || -z "$thresh_crit" ]]; then
+   echo "Threshold not set"
+   usage
+   exit $STATE_CRITICAL
+elif [[ "$thresh_crit" -lt "$thresh_warn" ]]; then
+   echo "Critical must be greater than warn threshold"
+   usage
+   exit $STATE_CRITICAL
+elif [[ -z "$RSYNC_TARGET" ]]; then
+   echo "You must set a rsync target"
+   exit $STATE_CRITICAL
+fi
+
+timestamp=`cat ${RSYNC_TARGET}/.rsync_timestamp`
+secdiff=$(( ${NOW} - ${timestamp} ))
+
+if [ ${secdiff} -gt ${thresh_crit} ]; then
+    echo "RSYNC CRITICAL - timestamp file is ${secdiff} seconds old"
+    exit $STATE_CRITICAL
+fi
+
+if [ ${secdiff} -gt ${thresh_warn} ]; then
+    echo "RSYNC WARNING - timestamp file is ${secdiff} seconds old"
+    exit $STATE_WARNING
+fi
+
+echo "RSYNC OK - timestamp file is ${secdiff} seconds old"
+exit $STATE_OK
